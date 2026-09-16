@@ -1,0 +1,40 @@
+namespace OrderProcessing.Api.Common;
+
+/// <summary>
+/// The shape a business operation finished in. Lets services signal expected, non-exceptional
+/// outcomes (not found, bad input, a business-rule conflict) that controllers map to specific HTTP
+/// status codes — reserving actual exceptions, and the global handler added in Task 6, for genuinely
+/// unexpected failures.
+/// </summary>
+public enum OperationOutcome
+{
+    Success,
+    NotFound,
+    ValidationFailed,
+    Conflict
+}
+
+/// <summary>Result of a service-layer operation that can fail in one of the ways above.</summary>
+public class OperationResult<T>
+{
+    public OperationOutcome Outcome { get; }
+    public T? Value { get; }
+    public string? Error { get; }
+
+    private OperationResult(OperationOutcome outcome, T? value, string? error)
+    {
+        Outcome = outcome;
+        Value = value;
+        Error = error;
+    }
+
+    public bool IsSuccess => Outcome == OperationOutcome.Success;
+
+    public static OperationResult<T> Success(T value) => new(OperationOutcome.Success, value, error: null);
+
+    public static OperationResult<T> NotFound(string error) => new(OperationOutcome.NotFound, default, error);
+
+    public static OperationResult<T> ValidationFailed(string error) => new(OperationOutcome.ValidationFailed, default, error);
+
+    public static OperationResult<T> Conflict(string error) => new(OperationOutcome.Conflict, default, error);
+}

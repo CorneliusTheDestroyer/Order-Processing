@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using OrderProcessing.Api.Data;
+using OrderProcessing.Api.Services;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -19,6 +20,8 @@ builder.Services.AddControllers()
 // consistent across the Order/Inventory/Payment controllers for the lifetime of the process.
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseInMemoryDatabase("OrderProcessingDb"));
+
+builder.Services.AddScoped<IInventoryService, InventoryService>();
 
 var app = builder.Build();
 
