@@ -37,20 +37,25 @@ internal static class HttpResponseMapper
     {
         try
         {
+            // Our controllers return the standard ASP.NET Core ProblemDetails shape
+            // ({ "detail": "...", "status": ..., ... }), not a bespoke { "message": "..." } body —
+            // read the "detail" field so Order actually surfaces Inventory/Payment's real business
+            // error text (e.g. "Insufficient stock for 'SKU-004'...") instead of always falling back
+            // to the generic message below.
             var body = await response.Content.ReadFromJsonAsync<ErrorBody>(cancellationToken: cancellationToken);
-            return body?.Message ?? $"{serviceName} returned HTTP {(int)response.StatusCode}.";
+            return body?.Detail ?? $"{serviceName} returned HTTP {(int)response.StatusCode}.";
         }
         catch (Exception)
         {
-            // Response body wasn't the { "message": "..." } shape our controllers use (or wasn't
-            // JSON at all) — fall back to a generic message instead of letting deserialization
-            // failure blow up what is already an error path.
+            // Response body wasn't the ProblemDetails shape our controllers use (or wasn't JSON at
+            // all) — fall back to a generic message instead of letting deserialization failure blow
+            // up what is already an error path.
             return $"{serviceName} returned HTTP {(int)response.StatusCode}.";
         }
     }
 
     private class ErrorBody
     {
-        public string? Message { get; set; }
+        public string? Detail { get; set; }
     }
 }

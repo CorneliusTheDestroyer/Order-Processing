@@ -1,9 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Microsoft.OpenApi.Models;
 using OrderProcessing.Api.Clients;
+using OrderProcessing.Api.Configuration;
 using OrderProcessing.Api.Data;
 using OrderProcessing.Api.Middleware;
 using OrderProcessing.Api.Services;
+using OrderProcessing.Api.Swagger;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -56,11 +60,23 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseInMemoryDatabase("OrderProcessingDb"));
 
+// Bonus: in-memory caching on inventory reads (cache-aside, actively invalidated on every write —
+// see InventoryService).
+builder.Services.AddMemoryCache();
+
 builder.Services.AddScoped<IInventoryService, InventoryService>();
+
+// Bonus: the simulated failure rate is configuration-driven (appsettings.json, overridden per
+// environment in appsettings.Development.json) instead of a hardcoded constant.
+builder.Services.Configure<PaymentOptions>(builder.Configuration.GetSection("Payment"));
 
 // Singleton: the simulator is stateless beyond its configured failure rate, and Random.Shared is
 // thread-safe, so there's no need for a fresh instance per request.
-builder.Services.AddSingleton<IPaymentGatewaySimulator>(_ => new RandomPaymentGatewaySimulator(failureRate: 0.1));
+builder.Services.AddSingleton<IPaymentGatewaySimulator>(sp =>
+{
+    var paymentOptions = sp.GetRequiredService<IOptions<PaymentOptions>>().Value;
+    return new RandomPaymentGatewaySimulator(failureRate: paymentOptions.FailureRate);
+});
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 
 // Order talks to Inventory and Payment over real HTTP (loopback, back into this same process) via
@@ -84,6 +100,23 @@ builder.Services.AddHttpClient<IPaymentClient, PaymentClient>(client =>
 
 builder.Services.AddScoped<IOrderService, OrderService>();
 
+// Bonus: Swagger/OpenAPI UI. EnumSchemaFilter re-documents enums as the camelCase strings they
+// actually serialize as (see the JsonStringEnumConverter registration above), since Swashbuckle
+// doesn't infer that from the converter on its own.
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Order Processing Service API",
+        Version = "v1",
+        Description = "Genasys C# Developer Technical Assessment — a simplified e-commerce order " +
+            "processing service with Order, Inventory, and Payment endpoints."
+    });
+
+    options.SchemaFilter<EnumSchemaFilter>();
+});
+
 var app = builder.Build();
 
 // Seed fixture inventory so the API is exercisable immediately after startup.
@@ -94,6 +127,12 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Configure the HTTP request pipeline.
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
 // Correlation id first, so it's already on HttpContext.Items by the time the exception handler (or
 // anything else) needs to read it.

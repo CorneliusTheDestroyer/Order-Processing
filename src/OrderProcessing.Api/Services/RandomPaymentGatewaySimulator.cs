@@ -3,8 +3,8 @@ namespace OrderProcessing.Api.Services;
 /// <summary>
 /// Approves payments randomly at a configurable failure rate, so the "payment processing failures"
 /// error scenario is actually reachable during manual testing instead of only in unit tests.
-/// The failure rate is a constructor parameter (not yet read from configuration) so Task 7 can wire
-/// it up to appsettings by changing only the DI registration in Program.cs.
+/// The failure rate is a constructor parameter, bound from configuration (PaymentOptions.FailureRate)
+/// by the DI registration in Program.cs, so it can be tuned per environment without a code change.
 /// </summary>
 public class RandomPaymentGatewaySimulator : IPaymentGatewaySimulator
 {

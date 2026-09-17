@@ -9,6 +9,8 @@
   <ItemGroup>
     <!-- Mandatory: EF Core with the In-Memory provider (Task 2 introduces the DbContext) -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.11" />
+    <!-- Bonus: Swagger/OpenAPI UI (Task 7) -->
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
   </ItemGroup>
 
 </Project>

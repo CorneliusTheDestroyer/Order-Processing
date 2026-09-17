@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using OrderProcessing.Api.Common;
 using OrderProcessing.Api.Data;
 using OrderProcessing.Api.Models;
@@ -14,21 +15,44 @@ public class InventoryService : IInventoryService
     // fail unpredictably under load.
     private const int MaxConcurrencyRetries = 3;
 
+    // Bonus: cache-aside on inventory reads. The TTL is a safety net only — every successful write
+    // in MutateWithRetryAsync actively removes the entry, so callers never see stale availability
+    // after a reserve/release; the TTL just bounds staleness if that invalidation were ever missed.
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(10);
+
     private readonly AppDbContext _context;
+    private readonly IMemoryCache _cache;
     private readonly ILogger<InventoryService> _logger;
 
-    public InventoryService(AppDbContext context, ILogger<InventoryService> logger)
+    public InventoryService(AppDbContext context, IMemoryCache cache, ILogger<InventoryService> logger)
     {
         _context = context;
+        _cache = cache;
         _logger = logger;
     }
 
     public async Task<InventoryItem?> GetAsync(string productId, CancellationToken cancellationToken = default)
     {
-        return await _context.InventoryItems
+        var cacheKey = CacheKeyFor(productId);
+
+        if (_cache.TryGetValue<InventoryItem>(cacheKey, out var cached))
+        {
+            return cached;
+        }
+
+        var item = await _context.InventoryItems
             .AsNoTracking()
             .FirstOrDefaultAsync(i => i.ProductId == productId, cancellationToken);
+
+        if (item is not null)
+        {
+            _cache.Set(cacheKey, item, CacheDuration);
+        }
+
+        return item;
     }
+
+    private static string CacheKeyFor(string productId) => $"inventory:{productId}";
 
     public Task<OperationResult<InventoryItem>> ReserveAsync(string productId, int quantity, CancellationToken cancellationToken = default)
     {
@@ -89,6 +113,11 @@ public class InventoryService : IInventoryService
             try
             {
                 await _context.SaveChangesAsync(cancellationToken);
+
+                // Actively invalidate rather than waiting out the TTL, so a GET immediately after a
+                // reserve/release always reflects the write that just happened.
+                _cache.Remove(CacheKeyFor(productId));
+
                 return OperationResult<InventoryItem>.Success(item);
             }
             catch (DbUpdateConcurrencyException)
