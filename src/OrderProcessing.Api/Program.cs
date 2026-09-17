@@ -23,6 +23,11 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 
+// Singleton: the simulator is stateless beyond its configured failure rate, and Random.Shared is
+// thread-safe, so there's no need for a fresh instance per request.
+builder.Services.AddSingleton<IPaymentGatewaySimulator>(_ => new RandomPaymentGatewaySimulator(failureRate: 0.1));
+builder.Services.AddScoped<IPaymentService, PaymentService>();
+
 var app = builder.Build();
 
 // Seed fixture inventory so the API is exercisable immediately after startup.
