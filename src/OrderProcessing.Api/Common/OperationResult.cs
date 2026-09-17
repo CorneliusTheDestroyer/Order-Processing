@@ -11,7 +11,14 @@ public enum OperationOutcome
     Success,
     NotFound,
     ValidationFailed,
-    Conflict
+    Conflict,
+
+    /// <summary>A downstream dependency (another controller, reached over HTTP) could not be
+    /// reached or timed out. Distinct from Conflict: this is "try again later", not "your request
+    /// was rejected" — added in Task 5 for the Inventory/Payment HTTP clients to report the
+    /// assessment's "service unavailability" error scenario distinctly from a business rule
+    /// failure.</summary>
+    Unavailable
 }
 
 /// <summary>Result of a service-layer operation that can fail in one of the ways above.</summary>
@@ -37,4 +44,6 @@ public class OperationResult<T>
     public static OperationResult<T> ValidationFailed(string error) => new(OperationOutcome.ValidationFailed, default, error);
 
     public static OperationResult<T> Conflict(string error) => new(OperationOutcome.Conflict, default, error);
+
+    public static OperationResult<T> Unavailable(string error) => new(OperationOutcome.Unavailable, default, error);
 }

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using OrderProcessing.Api.Clients;
 using OrderProcessing.Api.Data;
 using OrderProcessing.Api.Services;
 using System.Text.Json;
@@ -27,6 +28,27 @@ builder.Services.AddScoped<IInventoryService, InventoryService>();
 // thread-safe, so there's no need for a fresh instance per request.
 builder.Services.AddSingleton<IPaymentGatewaySimulator>(_ => new RandomPaymentGatewaySimulator(failureRate: 0.1));
 builder.Services.AddScoped<IPaymentService, PaymentService>();
+
+// Order talks to Inventory and Payment over real HTTP (loopback, back into this same process) via
+// typed HttpClients from IHttpClientFactory — the assessment's "HTTP Client for inter-service
+// communication" requirement, and the only way "service unavailability" is a real, reachable error
+// scenario rather than something only a mock could produce. The base URL must match whichever
+// address this API is actually listening on (see appsettings.json / launchSettings.json).
+var serviceBaseUrl = builder.Configuration["ServiceEndpoints:BaseUrl"] ?? "http://localhost:5173";
+
+builder.Services.AddHttpClient<IInventoryClient, InventoryClient>(client =>
+{
+    client.BaseAddress = new Uri(serviceBaseUrl);
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+
+builder.Services.AddHttpClient<IPaymentClient, PaymentClient>(client =>
+{
+    client.BaseAddress = new Uri(serviceBaseUrl);
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+
+builder.Services.AddScoped<IOrderService, OrderService>();
 
 var app = builder.Build();
 
