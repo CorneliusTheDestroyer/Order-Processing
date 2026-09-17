@@ -8,7 +8,7 @@ namespace OrderProcessing.Api.Controllers;
 
 [ApiController]
 [Route("api/inventory")]
-public class InventoryController : ControllerBase
+public class InventoryController : ApiControllerBase
 {
     private readonly IInventoryService _inventoryService;
     private readonly ILogger<InventoryController> _logger;
@@ -30,7 +30,7 @@ public class InventoryController : ControllerBase
         if (item is null)
         {
             _logger.LogInformation("Inventory lookup miss for product {ProductId}.", productId);
-            return NotFound(new { message = $"Product '{productId}' was not found in inventory." });
+            return ProblemResult($"Product '{productId}' was not found in inventory.", StatusCodes.Status404NotFound);
         }
 
         return Ok(InventoryItemResponse.FromModel(item));
@@ -66,11 +66,11 @@ public class InventoryController : ControllerBase
     private IActionResult ToActionResult(OperationResult<InventoryItem> result) => result.Outcome switch
     {
         OperationOutcome.Success => Ok(InventoryItemResponse.FromModel(result.Value!)),
-        OperationOutcome.NotFound => NotFound(new { message = result.Error }),
-        OperationOutcome.ValidationFailed => BadRequest(new { message = result.Error }),
+        OperationOutcome.NotFound => ProblemResult(result.Error!, StatusCodes.Status404NotFound),
+        OperationOutcome.ValidationFailed => ProblemResult(result.Error!, StatusCodes.Status400BadRequest),
         // 409: the request is well-formed, but conflicts with current inventory state (insufficient
         // stock, or releasing more than is reserved) — a business-state conflict, not bad input.
-        OperationOutcome.Conflict => Conflict(new { message = result.Error }),
-        _ => Problem(statusCode: StatusCodes.Status500InternalServerError)
+        OperationOutcome.Conflict => ProblemResult(result.Error!, StatusCodes.Status409Conflict),
+        _ => ProblemResult("An unexpected error occurred.", StatusCodes.Status500InternalServerError)
     };
 }

@@ -1,11 +1,22 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OrderProcessing.Api.Clients;
 using OrderProcessing.Api.Data;
+using OrderProcessing.Api.Middleware;
 using OrderProcessing.Api.Services;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// The default console formatter ignores ILogger scopes entirely, which would make
+// CorrelationIdMiddleware's BeginScope call silently pointless — this is what actually gets the
+// correlation id printed alongside every log line for a request.
+builder.Logging.AddSimpleConsole(options =>
+{
+    options.IncludeScopes = true;
+    options.TimestampFormat = "HH:mm:ss ";
+});
 
 // Add services to the container.
 
@@ -16,6 +27,29 @@ builder.Services.AddControllers()
         // string values documented in the assessment's data models.
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
     });
+
+// [ApiController]'s automatic model-validation failures already come back as ValidationProblemDetails
+// (the same ProblemDetails family ApiControllerBase.ProblemResult and ExceptionHandlingMiddleware
+// use) — this just tags them with the request's correlation id too, so *every* error response,
+// however it originated, carries the same trace-back-to-the-logs information.
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    var defaultFactory = options.InvalidModelStateResponseFactory;
+
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var response = defaultFactory(context);
+
+        if (response is ObjectResult { Value: ProblemDetails problemDetails } &&
+            context.HttpContext.Items.TryGetValue(CorrelationIdMiddleware.ItemsKey, out var correlationId) &&
+            correlationId is not null)
+        {
+            problemDetails.Extensions["correlationId"] = correlationId;
+        }
+
+        return response;
+    };
+});
 
 // EF Core with the In-Memory provider (mandatory technology). A single named database keeps state
 // consistent across the Order/Inventory/Payment controllers for the lifetime of the process.
@@ -60,6 +94,11 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Configure the HTTP request pipeline.
+
+// Correlation id first, so it's already on HttpContext.Items by the time the exception handler (or
+// anything else) needs to read it.
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.UseAuthorization();
 

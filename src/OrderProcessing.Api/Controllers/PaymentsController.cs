@@ -7,7 +7,7 @@ namespace OrderProcessing.Api.Controllers;
 
 [ApiController]
 [Route("api/payments")]
-public class PaymentsController : ControllerBase
+public class PaymentsController : ApiControllerBase
 {
     private readonly IPaymentService _paymentService;
 
@@ -29,8 +29,8 @@ public class PaymentsController : ControllerBase
         return result.Outcome switch
         {
             OperationOutcome.Success => Ok(PaymentTransactionResponse.FromModel(result.Value!)),
-            OperationOutcome.ValidationFailed => BadRequest(new { message = result.Error }),
-            _ => Problem(statusCode: StatusCodes.Status500InternalServerError)
+            OperationOutcome.ValidationFailed => ProblemResult(result.Error!, StatusCodes.Status400BadRequest),
+            _ => ProblemResult("An unexpected error occurred.", StatusCodes.Status500InternalServerError)
         };
     }
 
@@ -44,7 +44,7 @@ public class PaymentsController : ControllerBase
 
         if (transaction is null)
         {
-            return NotFound(new { message = $"Transaction '{transactionId}' was not found." });
+            return ProblemResult($"Transaction '{transactionId}' was not found.", StatusCodes.Status404NotFound);
         }
 
         return Ok(PaymentTransactionResponse.FromModel(transaction));

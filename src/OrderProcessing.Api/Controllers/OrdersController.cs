@@ -7,7 +7,7 @@ namespace OrderProcessing.Api.Controllers;
 
 [ApiController]
 [Route("api/orders")]
-public class OrdersController : ControllerBase
+public class OrdersController : ApiControllerBase
 {
     private const int MaxPageSize = 100;
 
@@ -33,10 +33,10 @@ public class OrdersController : ControllerBase
         {
             OperationOutcome.Success => CreatedAtAction(
                 nameof(GetById), new { id = result.Value!.Id }, OrderResponse.FromModel(result.Value)),
-            OperationOutcome.ValidationFailed => BadRequest(new { message = result.Error }),
-            OperationOutcome.Conflict => Conflict(new { message = result.Error }),
-            OperationOutcome.Unavailable => StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = result.Error }),
-            _ => Problem(statusCode: StatusCodes.Status500InternalServerError)
+            OperationOutcome.ValidationFailed => ProblemResult(result.Error!, StatusCodes.Status400BadRequest),
+            OperationOutcome.Conflict => ProblemResult(result.Error!, StatusCodes.Status409Conflict),
+            OperationOutcome.Unavailable => ProblemResult(result.Error!, StatusCodes.Status503ServiceUnavailable),
+            _ => ProblemResult("An unexpected error occurred.", StatusCodes.Status500InternalServerError)
         };
     }
 
@@ -50,7 +50,7 @@ public class OrdersController : ControllerBase
 
         if (order is null)
         {
-            return NotFound(new { message = $"Order '{id}' was not found." });
+            return ProblemResult($"Order '{id}' was not found.", StatusCodes.Status404NotFound);
         }
 
         return Ok(OrderResponse.FromModel(order));
@@ -91,9 +91,9 @@ public class OrdersController : ControllerBase
         return result.Outcome switch
         {
             OperationOutcome.Success => Ok(OrderResponse.FromModel(result.Value!)),
-            OperationOutcome.NotFound => NotFound(new { message = result.Error }),
-            OperationOutcome.Conflict => Conflict(new { message = result.Error }),
-            _ => Problem(statusCode: StatusCodes.Status500InternalServerError)
+            OperationOutcome.NotFound => ProblemResult(result.Error!, StatusCodes.Status404NotFound),
+            OperationOutcome.Conflict => ProblemResult(result.Error!, StatusCodes.Status409Conflict),
+            _ => ProblemResult("An unexpected error occurred.", StatusCodes.Status500InternalServerError)
         };
     }
 }
