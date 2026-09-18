@@ -21,9 +21,9 @@ internal static class HttpResponseMapper
     // options), while our response DTOs are plain PascalCase C# classes ("Status", "Detail"), so
     // without setting this explicitly, those properties would silently fail to bind — no exception,
     // just a defaulted value (PaymentStatus.Pending instead of Completed, Detail left null) — which
-    // is exactly the regression that shipped in the first pass at this fix: Task 8's integration
-    // tests caught it because a real payment came back looking "declined" and a real 409's error
-    // text came back as the generic fallback message instead of "Insufficient stock for '...'".
+    // is exactly the regression that shipped in the first pass at this fix: the integration tests
+    // caught it because a real payment came back looking "declined" and a real 409's error text
+    // came back as the generic fallback message instead of "Insufficient stock for '...'".
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,

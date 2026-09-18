@@ -20,9 +20,9 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <!-- Task 8: mocking IInventoryClient/IPaymentClient/IPaymentGatewaySimulator in service unit tests -->
+    <!-- Mocking IInventoryClient/IPaymentClient/IPaymentGatewaySimulator in service unit tests -->
     <PackageReference Include="Moq" Version="4.20.70" />
-    <!-- Task 8: WebApplicationFactory for the end-to-end integration tests -->
+    <!-- WebApplicationFactory for the end-to-end integration tests -->
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.11" />
   </ItemGroup>
 

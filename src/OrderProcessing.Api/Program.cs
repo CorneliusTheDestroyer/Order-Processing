@@ -146,6 +146,6 @@ app.MapControllers();
 app.Run();
 
 // Program.cs uses top-level statements, which generates an internal `Program` class by default.
-// Task 8's integration tests need to reference it (WebApplicationFactory<Program>) from the test
+// The integration tests need to reference it (WebApplicationFactory<Program>) from the test
 // assembly, so it's made public here — the standard pattern for testing minimal-hosting apps.
 public partial class Program { }

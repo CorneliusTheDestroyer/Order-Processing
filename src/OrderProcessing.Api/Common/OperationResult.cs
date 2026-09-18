@@ -3,8 +3,8 @@ namespace OrderProcessing.Api.Common;
 /// <summary>
 /// The shape a business operation finished in. Lets services signal expected, non-exceptional
 /// outcomes (not found, bad input, a business-rule conflict) that controllers map to specific HTTP
-/// status codes — reserving actual exceptions, and the global handler added in Task 6, for genuinely
-/// unexpected failures.
+/// status codes — reserving actual exceptions, and the global exception-handling middleware, for
+/// genuinely unexpected failures.
 /// </summary>
 public enum OperationOutcome
 {
@@ -15,9 +15,8 @@ public enum OperationOutcome
 
     /// <summary>A downstream dependency (another controller, reached over HTTP) could not be
     /// reached or timed out. Distinct from Conflict: this is "try again later", not "your request
-    /// was rejected" — added in Task 5 for the Inventory/Payment HTTP clients to report the
-    /// assessment's "service unavailability" error scenario distinctly from a business rule
-    /// failure.</summary>
+    /// was rejected" — lets the Inventory/Payment HTTP clients report the assessment's "service
+    /// unavailability" error scenario distinctly from a business rule failure.</summary>
     Unavailable
 }
 

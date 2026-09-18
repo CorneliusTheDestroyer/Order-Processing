@@ -58,8 +58,8 @@ public class PaymentService : IPaymentService
         }
 
         // A declined payment is still a successfully *processed* request — we recorded a
-        // transaction with Status = Failed. The caller (OrderService, Task 5) inspects that status
-        // to decide whether to confirm the order or release its inventory reservation.
+        // transaction with Status = Failed. The caller (OrderService) inspects that status to
+        // decide whether to confirm the order or release its inventory reservation.
         return OperationResult<PaymentTransaction>.Success(transaction);
     }
 

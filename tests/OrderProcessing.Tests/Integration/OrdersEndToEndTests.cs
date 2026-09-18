@@ -16,11 +16,11 @@ using OrderProcessing.Tests.TestDoubles;
 namespace OrderProcessing.Tests.Integration;
 
 /// <summary>
-/// True end-to-end tests driving the full order-creation flow through real HTTP requests, as Task 8
-/// asks for.
+/// True end-to-end tests driving the full order-creation flow through real HTTP requests, as the
+/// assessment's "testing strategy" evaluation criterion asks for.
 ///
 /// OrderService talks to Inventory/Payment over genuine loopback HTTP rather than in-process method
-/// calls (a deliberate Task 5 architecture choice — see the Clients/ folder — so that
+/// calls (a deliberate architecture choice — see the Clients/ folder and the README — so that
 /// "service unavailability" is a real, reachable failure mode). WebApplicationFactory's default
 /// TestServer doesn't listen on any real socket though, so left alone, those internal calls would
 /// fail with a connection error before ever reaching InventoryController/PaymentsController. Rather
