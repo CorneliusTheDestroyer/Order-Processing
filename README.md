@@ -1,7 +1,6 @@
 # Order Processing Service
 
-A simplified e-commerce order processing API built for Genasys's C# Developer Technical Assessment
-(July 2025). ASP.NET Core Web API on .NET 8, with Order, Inventory, and Payment controllers, EF Core
+A simplified e-commerce order processing API built for the Backend Developer Technical Assessment. ASP.NET Core Web API on .NET 8, with Order, Inventory, and Payment controllers, EF Core
 on the In-Memory provider, and genuine HTTP-based communication between them.
 
 ## Running it

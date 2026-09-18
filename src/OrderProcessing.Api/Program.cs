@@ -110,7 +110,7 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "Order Processing Service API",
         Version = "v1",
-        Description = "Genasys C# Developer Technical Assessment — a simplified e-commerce order " +
+        Description = "Backend Developer Technical Assessment — a simplified e-commerce order " +
             "processing service with Order, Inventory, and Payment endpoints."
     });
 
