@@ -12,16 +12,21 @@ namespace OrderProcessing.Api.Clients;
 /// </summary>
 internal static class HttpResponseMapper
 {
-    // System.Net.Http.Json's ReadFromJsonAsync uses its own default JsonSerializerOptions unless
-    // told otherwise — that default happens to match property names case-insensitively, but it has
-    // no enum-as-string converter. Program.cs's MVC responses serialize enums (OrderStatus,
-    // PaymentStatus) as camelCase strings via JsonStringEnumConverter, so without registering the
-    // same converter here, deserializing a real response — e.g. PaymentTransactionResponse's
-    // "status":"completed" — throws a JsonException instead of parsing it. This was only ever
-    // exercised by Task 8's end-to-end tests (unit tests mock the HTTP clients entirely), and would
-    // otherwise have made every real, successful payment call crash in production.
+    // System.Net.Http.Json's ReadFromJsonAsync uses its own internal default JsonSerializerOptions
+    // whenever no options are passed explicitly — and that internal default happens to match
+    // property names case-insensitively. The moment we pass our OWN JsonSerializerOptions instead
+    // (needed below for the enum-as-string converter), that convenience goes away: a bare
+    // `new JsonSerializerOptions()` defaults PropertyNameCaseInsensitive to false. Our MVC responses
+    // serialize property names as camelCase ("status", "detail" — see Program.cs's default Web JSON
+    // options), while our response DTOs are plain PascalCase C# classes ("Status", "Detail"), so
+    // without setting this explicitly, those properties would silently fail to bind — no exception,
+    // just a defaulted value (PaymentStatus.Pending instead of Completed, Detail left null) — which
+    // is exactly the regression that shipped in the first pass at this fix: Task 8's integration
+    // tests caught it because a real payment came back looking "declined" and a real 409's error
+    // text came back as the generic fallback message instead of "Insufficient stock for '...'".
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
+        PropertyNameCaseInsensitive = true,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
 
