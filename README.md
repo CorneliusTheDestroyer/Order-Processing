@@ -198,6 +198,32 @@ where a genuinely successful payment response failed to deserialize correctly ov
 below) — something the mocked unit tests structurally cannot catch, since they never serialize
 anything to begin with.
 
+## Manual verification
+
+Beyond the automated suite, every endpoint and each of the assessment's five named error scenarios
+was also exercised live against a running instance through Swagger UI (`/swagger`), confirming the
+same behavior holds outside the test harness:
+
+| Endpoint | Scenario | Result |
+|---|---|---|
+| `POST /api/orders` | Full happy path (reserve → charge → confirm) | `201`; inventory correctly moved from available to reserved |
+| `POST /api/orders` | Invalid input (empty `customerId`, zero quantity, negative price) | `400` `ValidationProblemDetails` listing all three field errors at once |
+| `POST /api/orders` | Order referencing a nonexistent product | `400`, "Product '...' does not exist" |
+| `GET /api/inventory/{productId}` | Nonexistent product | `404`, "Product '...' was not found in inventory" |
+| `PUT /api/orders/{id}/status` | Valid transition (Confirmed → Shipped) | `200`, order updated |
+| `PUT /api/orders/{id}/status` | Invalid transition (Shipped → Confirmed; Shipped is terminal) | `409`, "Cannot change order status from 'Shipped' to 'Confirmed'" |
+| `POST /api/inventory/{productId}/reserve` | Valid reservation | `200`, available/reserved quantities updated |
+| `POST /api/inventory/{productId}/reserve` | Insufficient stock | `409`, "Insufficient stock for '...': requested N, only M available" |
+| `POST /api/inventory/{productId}/release` | Valid release | `200`, quantities updated |
+| `POST /api/inventory/{productId}/release` | Releasing more than currently reserved | `409`, "Cannot release N units... only M are currently reserved" |
+| `GET /api/orders` | List with pagination | `200`; `page`/`pageSize`/`totalCount`/`totalPages` all correct, including with `pageSize=1` |
+| `GET /api/orders/{id}` | Valid id, then a nonexistent id | `200` full order / `404` |
+| `POST /api/payments/process` | Direct payment call (both approved and declined outcomes observed) | `200` in both cases — a decline is still a successfully processed request |
+| `GET /api/payments/{transactionId}` | Valid id, then a nonexistent id | `200` / `404` |
+
+Every response also carried its own `x-correlation-id`, confirming `CorrelationIdMiddleware` threads
+through every code path — not just the ones the automated tests happen to exercise.
+
 ## Bonus features implemented
 
 - **Swagger/OpenAPI** — full interactive docs at `/swagger`, enums documented as their real
