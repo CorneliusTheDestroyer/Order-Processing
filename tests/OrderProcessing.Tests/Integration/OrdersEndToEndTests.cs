@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -12,6 +13,7 @@ using OrderProcessing.Api.Dtos;
 using OrderProcessing.Api.Models;
 using OrderProcessing.Api.Services;
 using OrderProcessing.Tests.TestDoubles;
+using OrderProcessing.Tests.TestHelpers;
 
 namespace OrderProcessing.Tests.Integration;
 
@@ -78,6 +80,7 @@ public class OrdersEndToEndTests
     {
         using var factory = CreateFactory(approvePayments: true);
         using var client = factory.CreateClient();
+        await AuthTestHelper.AuthenticateAsync(client);
 
         var before = await client.GetFromJsonAsync<InventoryItemResponse>("/api/inventory/SKU-003", JsonOptions);
 
@@ -107,6 +110,7 @@ public class OrdersEndToEndTests
     {
         using var factory = CreateFactory(approvePayments: false);
         using var client = factory.CreateClient();
+        await AuthTestHelper.AuthenticateAsync(client);
 
         var before = await client.GetFromJsonAsync<InventoryItemResponse>("/api/inventory/SKU-002", JsonOptions);
 
@@ -139,6 +143,7 @@ public class OrdersEndToEndTests
     {
         using var factory = CreateFactory(approvePayments: true);
         using var client = factory.CreateClient();
+        await AuthTestHelper.AuthenticateAsync(client);
 
         var request = new CreateOrderRequest
         {
@@ -158,10 +163,58 @@ public class OrdersEndToEndTests
         Assert.Contains("Insufficient stock", problem!.Detail);
     }
 
-    /// <summary>Minimal shape for reading the ProblemDetails error body's "detail" field, without
-    /// taking a dependency on Microsoft.AspNetCore.Mvc's own ProblemDetails type just for that.</summary>
+    [Fact]
+    public async Task CreateOrder_EndToEnd_ReturnsUnauthorizedProblemDetails_WhenNoTokenProvided()
+    {
+        using var factory = CreateFactory(approvePayments: true);
+        using var client = factory.CreateClient();
+        // Deliberately not calling AuthTestHelper.AuthenticateAsync — this is the no-token case.
+
+        var request = new CreateOrderRequest
+        {
+            CustomerId = "e2e-customer",
+            Items = new List<CreateOrderItemRequest>
+            {
+                new() { ProductId = "SKU-003", Quantity = 1, UnitPrice = 9.99m }
+            }
+        };
+
+        var response = await client.PostAsJsonAsync("/api/orders", request, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetailsBody>(JsonOptions);
+        Assert.False(string.IsNullOrWhiteSpace(problem!.CorrelationId));
+    }
+
+    [Fact]
+    public async Task CreateOrder_EndToEnd_ReturnsUnauthorizedProblemDetails_WhenTokenIsInvalid()
+    {
+        using var factory = CreateFactory(approvePayments: true);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "not-a-real-token");
+
+        var request = new CreateOrderRequest
+        {
+            CustomerId = "e2e-customer",
+            Items = new List<CreateOrderItemRequest>
+            {
+                new() { ProductId = "SKU-003", Quantity = 1, UnitPrice = 9.99m }
+            }
+        };
+
+        var response = await client.PostAsJsonAsync("/api/orders", request, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    /// <summary>Minimal shape for reading the ProblemDetails error body's "detail"/"correlationId"
+    /// fields, without taking a dependency on Microsoft.AspNetCore.Mvc's own ProblemDetails type
+    /// just for that.</summary>
     private class ProblemDetailsBody
     {
         public string? Detail { get; set; }
+
+        public string? CorrelationId { get; set; }
     }
 }

@@ -1,6 +1,9 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using OrderProcessing.Api.Clients;
 using OrderProcessing.Api.Configuration;
@@ -8,6 +11,7 @@ using OrderProcessing.Api.Data;
 using OrderProcessing.Api.Middleware;
 using OrderProcessing.Api.Services;
 using OrderProcessing.Api.Swagger;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -100,6 +104,84 @@ builder.Services.AddHttpClient<IPaymentClient, PaymentClient>(client =>
 
 builder.Services.AddScoped<IOrderService, OrderService>();
 
+// Bonus: JWT bearer authentication. There's no real user/account system in this domain (see
+// JwtOptions and the README's Authentication section), so a single demo client-credential pair
+// stands in for one; every business endpoint requires a valid token via the fallback authorization
+// policy below, and AuthController's token endpoint is the one place that's [AllowAnonymous].
+var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()
+    ?? throw new InvalidOperationException("Missing 'Jwt' configuration section.");
+
+if (Encoding.UTF8.GetByteCount(jwtOptions.SigningKey) < 32)
+{
+    // HMAC-SHA256 requires a key of at least 256 bits (32 bytes) — SymmetricSecurityKey throws on
+    // first use otherwise. Failing fast here beats an opaque exception on the first token request.
+    throw new InvalidOperationException("Jwt:SigningKey must be at least 32 bytes (256 bits) for HMAC-SHA256.");
+}
+
+// Writes the same correlation-tagged RFC7807 ProblemDetails shape ApiControllerBase.ProblemResult
+// produces from controllers — used by the JwtBearer events below so an auth failure looks like
+// every other error this API returns, not ASP.NET Core's bare default 401/403.
+static async Task WriteAuthProblemAsync(HttpContext httpContext, int statusCode, string detail)
+{
+    var problemDetails = new ProblemDetails
+    {
+        Detail = detail,
+        Status = statusCode,
+        Instance = httpContext.Request.Path
+    };
+
+    if (httpContext.Items.TryGetValue(CorrelationIdMiddleware.ItemsKey, out var correlationId) && correlationId is not null)
+    {
+        problemDetails.Extensions["correlationId"] = correlationId;
+    }
+
+    httpContext.Response.ContentType = "application/problem+json";
+    await httpContext.Response.WriteAsync(JsonSerializer.Serialize(problemDetails));
+}
+
+builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
+builder.Services.AddSingleton<ITokenService, TokenService>();
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtOptions.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwtOptions.Audience,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey))
+        };
+
+        // The default JwtBearer challenge/forbid responses are a bare 401/403 with no body — this
+        // keeps every auth failure in the same correlation-tagged ProblemDetails shape every other
+        // error in this API already uses (see ApiControllerBase.ProblemResult).
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = async context =>
+            {
+                context.HandleResponse();
+                await WriteAuthProblemAsync(context.HttpContext, StatusCodes.Status401Unauthorized,
+                    "Authentication is required to access this resource.");
+            },
+            OnForbidden = async context =>
+            {
+                await WriteAuthProblemAsync(context.HttpContext, StatusCodes.Status403Forbidden,
+                    "You do not have permission to access this resource.");
+            }
+        };
+    });
+
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
+
 // Bonus: Swagger/OpenAPI UI. EnumSchemaFilter re-documents enums as the camelCase strings they
 // actually serialize as (see the JsonStringEnumConverter registration above), since Swashbuckle
 // doesn't infer that from the converter on its own.
@@ -115,6 +197,30 @@ builder.Services.AddSwaggerGen(options =>
     });
 
     options.SchemaFilter<EnumSchemaFilter>();
+
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Paste the raw access token returned by POST /api/auth/token — Swagger UI " +
+            "adds the 'Bearer ' prefix automatically."
+    });
+
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+            },
+            Array.Empty<string>()
+        }
+    });
+
+    options.OperationFilter<AuthorizeCheckOperationFilter>();
 });
 
 var app = builder.Build();
@@ -139,6 +245,7 @@ if (app.Environment.IsDevelopment())
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();

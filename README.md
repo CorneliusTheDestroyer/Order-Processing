@@ -115,6 +115,22 @@ successful reserve/release — a read immediately after a write is never stale.
 
 ## API
 
+### Auth Controller
+
+| Method | Route | Description |
+|---|---|---|
+| POST | `/api/auth/token` | Exchange demo client credentials for a bearer token — the only anonymous endpoint |
+
+Every other endpoint in this API requires `Authorization: Bearer <token>`, enforced by a global
+fallback authorization policy in `Program.cs` — anything added later is protected by default too,
+not just the controllers listed below. There's no real user/account system in this domain
+(`CustomerId` is a free string, not an account), so a single demo client-credential pair stands in
+for one; see `appsettings.json`'s `Jwt` section for the actual `DemoClientId`/`DemoClientSecret`
+values used locally. In Swagger UI, click **Authorize**, paste the raw token `/api/auth/token`
+returns (no `Bearer ` prefix needed — Swagger adds it), and every subsequent request in the UI
+carries it automatically. A missing or invalid token returns the same correlation-tagged
+`ProblemDetails` shape as every other error in this API, not ASP.NET Core's bare default 401.
+
 ### Order Controller
 
 | Method | Route | Description |
@@ -231,11 +247,13 @@ through every code path — not just the ones the automated tests happen to exer
   `appsettings.json`/`appsettings.Development.json`, not a hardcoded constant.
 - **Structured logging with correlation IDs** — see [Logging](#logging-and-correlation-ids) above.
 - **Caching** — `IMemoryCache` cache-aside on inventory reads, actively invalidated on writes.
+- **JWT bearer authentication** — every endpoint except `POST /api/auth/token` requires a valid
+  token (global fallback authorization policy); see [Auth Controller](#auth-controller) above.
 
-**Deliberately not implemented:** JWT authentication and metrics/monitoring endpoints. This was a
-scoping decision made up front (see the commit history) to keep the bonus surface realistic rather
-than spreading thin — the assessment's own evaluation criteria weight business logic, edge cases,
-and testing strategy (40%) alongside code quality (60%), and those three took priority.
+**Deliberately not implemented:** metrics/monitoring endpoints. This was a scoping decision made up
+front (see the commit history) to keep the bonus surface realistic rather than spreading thin — the
+assessment's own evaluation criteria weight business logic, edge cases, and testing strategy (40%)
+alongside code quality (60%), and those took priority over every possible bonus item.
 
 ## Trade-offs and known limitations
 
@@ -257,7 +275,19 @@ and testing strategy (40%) alongside code quality (60%), and those three took pr
   good illustration of why the integration tests were worth the extra complexity.
 - **EF Core InMemory is not persistent.** State resets on every restart, by design — it's the
   assessment's mandated persistence technology, not a production choice.
-- **No authentication.** Every endpoint is open, consistent with the bonus-scope decision above.
+- **JWT signing key and demo client secret are committed in `appsettings.json` in plaintext.**
+  Fine for a self-contained demo/assessment; a real deployment would pull these from
+  `dotnet user-secrets`, environment variables, or a secrets manager instead.
+- **A single static demo credential pair, not a real user/account system.** The JWT `sub` claim
+  identifies the one demo client, not a domain entity — `CustomerId` on an order remains an
+  unrelated free-text string, consistent with this project's existing scope.
+- **No refresh tokens, no revocation.** A client re-authenticates with the same demo credentials
+  once its token expires (60 minutes); a leaked token stays valid until then. No roles or scopes
+  either — every valid token has uniform access, which is appropriate for this assessment's scope
+  but wouldn't be for a real multi-tenant API.
+- **HS256 symmetric signing.** The same secret signs and validates, appropriate for one
+  self-contained API; a setup with a separate identity provider or multiple services validating
+  tokens without holding the signing key would move to asymmetric (RS256) signing instead.
 - **Build/test verification.** This was developed in an environment without registry access to
   restore NuGet packages, so verification leaned on careful manual review plus the user (Corne)
   running `dotnet build`/`dotnet test` locally after each task — which is exactly what caught the

@@ -11,6 +11,8 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.11" />
     <!-- Bonus: Swagger/OpenAPI UI -->
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
+    <!-- Bonus: JWT bearer authentication -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
   </ItemGroup>
 
 </Project>
