@@ -90,17 +90,24 @@ builder.Services.AddScoped<IPaymentService, PaymentService>();
 // address this API is actually listening on (see appsettings.json / launchSettings.json).
 var serviceBaseUrl = builder.Configuration["ServiceEndpoints:BaseUrl"] ?? "http://localhost:5173";
 
+// Inventory and Payments now require a bearer token like any other endpoint (see the fallback
+// authorization policy below), so Order's own internal loopback calls to them need one too —
+// AuthorizationForwardingHandler carries the original caller's token through. IHttpContextAccessor
+// is what lets that handler see the inbound request from inside an outgoing HttpClient pipeline.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddTransient<AuthorizationForwardingHandler>();
+
 builder.Services.AddHttpClient<IInventoryClient, InventoryClient>(client =>
 {
     client.BaseAddress = new Uri(serviceBaseUrl);
     client.Timeout = TimeSpan.FromSeconds(10);
-});
+}).AddHttpMessageHandler<AuthorizationForwardingHandler>();
 
 builder.Services.AddHttpClient<IPaymentClient, PaymentClient>(client =>
 {
     client.BaseAddress = new Uri(serviceBaseUrl);
     client.Timeout = TimeSpan.FromSeconds(10);
-});
+}).AddHttpMessageHandler<AuthorizationForwardingHandler>();
 
 builder.Services.AddScoped<IOrderService, OrderService>();
 
@@ -135,6 +142,15 @@ static async Task WriteAuthProblemAsync(HttpContext httpContext, int statusCode,
         problemDetails.Extensions["correlationId"] = correlationId;
     }
 
+    // context.HandleResponse() (called by both OnChallenge/OnForbidden below) suppresses the
+    // JwtBearer handler's own default status-code assignment, so this is now the ONLY place that
+    // sets it — forgetting this line is exactly the bug that shipped in the first pass: every
+    // auth failure still produced the right ProblemDetails *body* (Status: 401 inside the JSON)
+    // but left the actual HTTP response at the default 200 OK, which made every protected
+    // endpoint look wide open to callers checking the status code (including OrderService's own
+    // internal Inventory/Payment loopback calls, which don't forward a caller's token and were
+    // silently treated as successful with an empty/default response body as a result).
+    httpContext.Response.StatusCode = statusCode;
     httpContext.Response.ContentType = "application/problem+json";
     await httpContext.Response.WriteAsync(JsonSerializer.Serialize(problemDetails));
 }

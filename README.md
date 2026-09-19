@@ -189,13 +189,16 @@ The assessment calls out five specific scenarios. Here's where each is handled:
 
 ## Testing strategy
 
-`dotnet test` runs 33 tests across two layers:
+`dotnet test` runs 38 tests across three layers:
 
 - **Unit tests** (`InventoryServiceTests`, `PaymentServiceTests`, `OrderServiceTests`) mock
   `IInventoryClient`/`IPaymentClient`/`IPaymentGatewaySimulator` with Moq and exercise each service
   in isolation against a real EF Core InMemory `DbContext`. Coverage includes every happy path, the
   assessment's named edge cases (insufficient inventory, payment decline, invalid input, concurrent
   reservation), rollback behavior on partial failures, and the state-machine/pagination rules.
+- **`TokenServiceTests`** covers `ITokenService` directly: valid demo credentials produce a signed
+  token with the expected issuer/audience/subject claims; a wrong client id or secret returns a
+  failure with no token issued.
 - **Integration tests** (`OrdersEndToEndTests`) drive the full create-order flow through real HTTP
   requests via `WebApplicationFactory<Program>` — confirmed-and-committed on approval,
   cancelled-and-released on decline, and a `409` with the real `ProblemDetails` error text on
@@ -206,7 +209,10 @@ The assessment calls out five specific scenarios. Here's where each is handled:
   handler for the duration of the test — Order's internal calls reach
   `InventoryController`/`PaymentsController` in-process, no sockets involved. The payment gateway is
   swapped for a deterministic fake per test so approval/decline is a controlled precondition rather
-  than a chance of flaking against the real random simulator.
+  than a chance of flaking against the real random simulator. Every test authenticates via a real
+  call to `POST /api/auth/token` first (`AuthTestHelper`) and attaches the resulting bearer token,
+  so the suite exercises the real auth flow rather than bypassing it; two additional cases assert
+  that a missing or invalid token gets a correlation-tagged `401`, not a bypassed request.
 
 These integration tests earned their complexity during development: they're what caught a real bug
 where a genuinely successful payment response failed to deserialize correctly over the wire (see
@@ -235,9 +241,19 @@ same behavior holds outside the test harness:
 | `GET /api/orders/{id}` | Valid id, then a nonexistent id | `200` full order / `404` |
 | `POST /api/payments/process` | Direct payment call (both approved and declined outcomes observed) | `200` in both cases — a decline is still a successfully processed request |
 | `GET /api/payments/{transactionId}` | Valid id, then a nonexistent id | `200` / `404` |
+| `POST /api/auth/token` | Valid demo credentials | `200`, a signed access token + `expiresAt` |
+| `POST /api/auth/token` | Invalid credentials (wrong secret) | `401`, "Invalid client credentials." |
+| `GET /api/inventory/{productId}` | No `Authorization` header | `401` `ProblemDetails` with a `correlationId`, via the Swagger Authorize padlock |
+| `GET /api/inventory/{productId}` | Valid token attached (Swagger Authorize button) | `200`, normal response body |
+| `POST /api/orders` | Full flow with a valid token attached | `201`; confirmed internal Inventory/Payment loopback calls (which don't carry the caller's header directly) are correctly authenticated via `AuthorizationForwardingHandler` |
 
 Every response also carried its own `x-correlation-id`, confirming `CorrelationIdMiddleware` threads
-through every code path — not just the ones the automated tests happen to exercise.
+through every code path — not just the ones the automated tests happen to exercise. The two
+`401` cases above surfaced a real bug during development: the JWT challenge handler wrote the
+correct `ProblemDetails` body but initially left the HTTP status code at the default `200`, which
+also silently let Order's own internal Inventory/Payment calls (unauthenticated) through as if they
+had succeeded. Fixed by explicitly setting `Response.StatusCode` in `WriteAuthProblemAsync` and by
+forwarding the caller's bearer token onto those internal calls — see the trade-offs below.
 
 ## Bonus features implemented
 
@@ -288,6 +304,13 @@ alongside code quality (60%), and those took priority over every possible bonus 
 - **HS256 symmetric signing.** The same secret signs and validates, appropriate for one
   self-contained API; a setup with a separate identity provider or multiple services validating
   tokens without holding the signing key would move to asymmetric (RS256) signing instead.
+- **Order's internal Inventory/Payment calls forward the caller's own bearer token
+  (`AuthorizationForwardingHandler`)**, rather than using a separate service-to-service credential.
+  This keeps the design simple and means the caller who's authorized to create an order is the
+  identity those downstream calls act under — but it also means those internal calls fail if the
+  original token expires mid-request, and there's no way for Order to act with broader or narrower
+  permissions than the caller who invoked it. A real multi-service setup would more likely use a
+  dedicated client-credentials token for service-to-service calls.
 - **Build/test verification.** This was developed in an environment without registry access to
   restore NuGet packages, so verification leaned on careful manual review plus the user (Corne)
   running `dotnet build`/`dotnet test` locally after each task — which is exactly what caught the
