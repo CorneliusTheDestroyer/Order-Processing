@@ -125,11 +125,18 @@ Every other endpoint in this API requires `Authorization: Bearer <token>`, enfor
 fallback authorization policy in `Program.cs` — anything added later is protected by default too,
 not just the controllers listed below. There's no real user/account system in this domain
 (`CustomerId` is a free string, not an account), so a single demo client-credential pair stands in
-for one; see `appsettings.json`'s `Jwt` section for the actual `DemoClientId`/`DemoClientSecret`
-values used locally. In Swagger UI, click **Authorize**, paste the raw token `/api/auth/token`
-returns (no `Bearer ` prefix needed — Swagger adds it), and every subsequent request in the UI
-carries it automatically. A missing or invalid token returns the same correlation-tagged
-`ProblemDetails` shape as every other error in this API, not ASP.NET Core's bare default 401.
+for one:
+
+```json
+{ "clientId": "demo-client", "clientSecret": "demo-secret" }
+```
+
+POST that to `/api/auth/token` to get a bearer token (these values live in `appsettings.json`'s
+`Jwt` section, the source of truth they're read from). In Swagger UI, click **Authorize**, paste
+the raw token `/api/auth/token` returns (no `Bearer ` prefix needed — Swagger adds it), and every
+subsequent request in the UI carries it automatically. A missing or invalid token returns the same
+correlation-tagged `ProblemDetails` shape as every other error in this API, not ASP.NET Core's bare
+default 401.
 
 ### Order Controller
 
